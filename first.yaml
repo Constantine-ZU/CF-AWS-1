@@ -1,0 +1,27 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  AWSAccessKeyId:
+    Type: 'AWS::SSM::Parameter::Value<String>'
+    Default: '/BlazorAut/AWS_ACCESS_KEY_ID'
+  AWSSecretAccessKey:
+    Type: 'AWS::SSM::Parameter::Value<String>'
+    Default: '/BlazorAut/AWS_SECRET_ACCESS_KEY'
+  HetznerDNSKey:
+    Type: 'AWS::SSM::Parameter::Value<String>'
+    Default: '/BlazorAut/TF_VAR_hetzner_dns_key'
+  EnabledIPCidrs:
+    Type: 'AWS::SSM::Parameter::Value<String>'
+    Default: '/BlazorAut/TF_VAR_enabled_ip_cidrs'
+  DBPassword:
+    Type: 'AWS::SSM::Parameter::Value<String>'
+    Default: '/BlazorAut/TF_VAR_db_password'
+
+Resources:
+  ExampleInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      ImageId: 'ami-0c55b159cbfafe1f0'
+      InstanceType: 't2.micro'
+      Tags:
+        - Key: 'Name'
+          Value: 'example-instance'
