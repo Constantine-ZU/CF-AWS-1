@@ -9,19 +9,187 @@ Parameters:
   HetznerDNSKey:
     Type: 'AWS::SSM::Parameter::Value<String>'
     Default: '/BlazorAut/TF_VAR_hetzner_dns_key'
-  EnabledIPCidrs:
-    Type: 'AWS::SSM::Parameter::Value<String>'
-    Default: '/BlazorAut/TF_VAR_enabled_ip_cidrs'
   DBPassword:
     Type: 'AWS::SSM::Parameter::Value<String>'
     Default: '/BlazorAut/TF_VAR_db_password'
 
 Resources:
-  ExampleInstance:
+  VPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: '10.10.0.0/16'
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: '0_0_VPC'
+
+  Subnet10:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.10.10.0/24'
+      AvailabilityZone: 'eu-north-1a'
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: 'Subnet_10_0_24'
+
+  Subnet20:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.10.20.0/24'
+      AvailabilityZone: 'eu-north-1b'
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: 'Subnet_20_0_24'
+
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: 'defaultIGW'
+
+  VPCGatewayAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  RouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: 'defaultRouteTable'
+
+  Route:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway
+
+  RouteTableAssociationSubnet10:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet10
+      RouteTableId: !Ref RouteTable
+
+  RouteTableAssociationSubnet20:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet20
+      RouteTableId: !Ref RouteTable
+
+  SecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: 'launch-wizard'
+      GroupDescription: 'launch-wizard security group for EC2 instance'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: '0.0.0.0/0'
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: '0.0.0.0/0'
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: '0.0.0.0/0'
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          FromPort: 0
+          ToPort: 0
+          CidrIp: '0.0.0.0/0'
+
+  Instance20_7:
     Type: 'AWS::EC2::Instance'
     Properties:
-      ImageId: 'ami-0c55b159cbfafe1f0'
-      InstanceType: 't2.micro'
+      ImageId: 'ami-0705384c0b33c194c'
+      InstanceType: 't3.micro'
+      KeyName: 'pair-key'
+      SubnetId: !Ref Subnet20
+      SecurityGroupIds: [!Ref SecurityGroup]
+      PrivateIpAddress: '10.10.20.7'
+      IamInstanceProfile: 'IAM_CERT_ROLE'
       Tags:
-        - Key: 'Name'
-          Value: 'example-instance'
+        - Key: Name
+          Value: 'Ubuntu-ALB-10-7'
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum install -y aws-cfn-bootstrap
+          /opt/aws/bin/cfn-signal -e $? \
+            --stack ${AWS::StackName} \
+            --resource WaitCondition \
+            --region ${AWS::Region}
+          echo "${DBPassword}" > /tmp/db_password
+          sudo mv /tmp/setup_instance.sh /usr/local/bin/setup_instance.sh
+          sudo chmod +x /usr/local/bin/setup_instance.sh
+          export S3_PATH='s3://constantine-z-2/'
+          export PFX_FILE_NAME='webaws_pam4_com_2024_05_13.pfx'
+          export APP_NAME='BlazorAut'
+          export S3_BASE_URL='https://constantine-z.s3.eu-north-1.amazonaws.com'
+          export DB_HOST='pgaws.pam4.com'
+          export DB_USER='dbuser'
+          DB_PASS=$(cat /tmp/db_password)
+          export DB_PASS
+          export DB_NAME='dbwebaws'
+          sudo mv /tmp/restore_pg_dump.sh /usr/local/bin/restore_pg_dump.sh
+          sudo chmod +x /usr/local/bin/restore_pg_dump.sh
+          sudo -E /usr/local/bin/restore_pg_dump.sh
+          sudo -E /usr/local/bin/setup_instance.sh
+
+  Instance10_6:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      ImageId: 'ami-0705384c0b33c194c'
+      InstanceType: 't3.micro'
+      KeyName: 'pair-key'
+      SubnetId: !Ref Subnet10
+      SecurityGroupIds: [!Ref SecurityGroup]
+      PrivateIpAddress: '10.10.10.6'
+      IamInstanceProfile: 'IAM_CERT_ROLE'
+      Tags:
+        - Key: Name
+          Value: 'Ubuntu-ALB-10-6'
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum install -y aws-cfn-bootstrap
+          /opt/aws/bin/cfn-signal -e $? \
+            --stack ${AWS::StackName} \
+            --resource WaitCondition \
+            --region ${AWS::Region}
+          echo "${DBPassword}" > /tmp/db_password
+          sudo mv /tmp/setup_instance.sh /usr/local/bin/setup_instance.sh
+          sudo chmod +x /usr/local/bin/setup_instance.sh
+          export S3_PATH='s3://constantine-z-2/'
+          export PFX_FILE_NAME='webaws_pam4_com_2024_05_13.pfx'
+          export APP_NAME='BlazorAut'
+          export S3_BASE_URL='https://constantine-z.s3.eu-north-1.amazonaws.com'
+          export DB_HOST='pgaws.pam4.com'
+          export DB_USER='dbuser'
+          DB_PASS=$(cat /tmp/db_password)
+          export DB_PASS
+          export DB_NAME='dbwebaws'
+          sudo -E /usr/local/bin/setup_instance.sh
+
+  WaitConditionHandle:
+    Type: 'AWS::CloudFormation::WaitConditionHandle'
+
+  WaitCondition:
+    Type: 'AWS::CloudFormation::WaitCondition'
+    Properties:
+      Handle: !Ref WaitConditionHandle
+      Timeout: '300'
+      Count: '1'
